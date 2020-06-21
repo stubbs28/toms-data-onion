@@ -1,6 +1,8 @@
 import base64
 import socket
 import struct
+from aes_keywrap import aes_unwrap_key
+from Crypto.Cipher import AES
 
 def getLayer(data):
     """Returns instructions and payload from onion layer.
@@ -143,13 +145,27 @@ def decode4(payload):
         c += 1
     return getLayer(bytesToString(r))
 
+def decode5(payload):
+    p = payloadToBytes(payload)
+    partitions = [32, 8, 40, 16]
+    sections = []
+    for x in partitions:
+        sections.append(p[:x])
+        p = p[x:]
+    # decode the key
+    unwrapped = aes_unwrap_key( sections[0], sections[2], int.from_bytes(sections[1], byteorder='big', signed=False))
+    cipher = AES.new(unwrapped, AES.MODE_CBC, sections[3])
+    print(cipher.decrypt(p).decode('utf-8'))
+
+
 def main():
     decoder = {
         0: decode0,
         1: decode1,
         2: decode2,
         3: decode3,
-        4: decode4
+        4: decode4,
+        5: decode5
     }
     with open('onion.txt', 'r') as f:
         data = f.readlines()
