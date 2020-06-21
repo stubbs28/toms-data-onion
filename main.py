@@ -1,4 +1,6 @@
 import base64
+import socket
+import struct
 
 def getLayer(data):
     """Returns instructions and payload from onion layer.
@@ -81,7 +83,8 @@ def decode3(payload):
 class ipv4Packet:
     srcaddr = 0x0A01010A
     dstaddr = 0x0A0101C8
-    def __init__(self, b):
+    def __init__(self, b, i):
+        self.id = i
         self.length = int.from_bytes(b[2:4], byteorder='big', signed=False)
         self.protocol = int.from_bytes(b[8:10], byteorder='big', signed=False) & 0xFF
         self.srcaddr = int.from_bytes(b[12:16], byteorder='big', signed=False)
@@ -90,50 +93,54 @@ class ipv4Packet:
         for x in range(20)[::2]:
             s += int.from_bytes(b[x:x+2], byteorder='big', signed=False)
         self.checksum = ~((s >> 16) + s) & 0xFFFF
-        self.payload = udpPacket(b[20:self.length], self.protocol)
+        self.payload = udpPacket(b[20:self.length], self.protocol, self.id)
 
     def isValid(self):
         if self.checksum != 0:
-            print('bad checksum: {0}'.format(self.checksum))
+            #print('{0}: bad checksum: {1}'.format(self.id, self.checksum))
             return False
         if self.srcaddr != ipv4Packet.srcaddr:
-            print('bad srcaddr: {0}.{1}.{2}.{3}'.format(self.srcaddr >> 24, (self.srcaddr >> 16) & 0xFF, (self.srcaddr >> 8) & 0xFF, self.srcaddr & 0xFF))
+            #print('{0}: bad srcaddr: {1}'.format(self.id, socket.inet_ntoa(struct.pack("!I", self.srcaddr))))
+            return False
         if self.dstaddr != ipv4Packet.dstaddr:
-            print('bad srcaddr: {0}.{1}.{2}.{3}'.format(self.dstaddr >> 24, (self.dstaddr >> 16) & 0xFF, (self.dstaddr >> 8) & 0xFF, self.dstaddr & 0xFF))
+            #print('{0}: bad dstaddr: {1}'.format(self.id, socket.inet_ntoa(struct.pack("!I", self.dstaddr))))
+            return False
         return self.payload.isValid()
 
 class udpPacket:
     dstport = 42069
-    def __init__(self, b, p):
+    def __init__(self, b, p, i):
+        self.id = i
         self.dstport = int.from_bytes(b[2:4], byteorder='big', signed=False)
         self.length = int.from_bytes(b[4:6], byteorder='big', signed=False)
         s = self.length + p + 0x0A01 + 0x010A + 0x0A01 + 0x01C8
+        padded = bytearray(b)
+        padded.append(0)
         for x in range(self.length)[::2]:
-            s += int.from_bytes(b[x:x+2], byteorder='big', signed=False)
+            s += int.from_bytes(padded[x:x+2], byteorder='big', signed=False)
         self.checksum = ~((s >> 16) + s) & 0xFFFF
         self.payload = b[8:self.length]
 
     def isValid(self):
         if self.checksum != 0:
-            print('bad udp checksum: {0}'.format(self.checksum))
+            #print('{0}: bad udp checksum: {1}'.format(self.id, self.checksum))
             return False
         if self.dstport != udpPacket.dstport:
-            print('bad dst port: {0}'.format(self.dstport))
+            #print('{0}: bad dst port: {1}'.format(self.id, self.dstport))
+            return False
         return True
 
 def decode4(payload):
     p = payloadToBytes(payload)
+    r = bytearray()
     i = 0
     c = 0
-    r = bytearray()
     while i < len(p):
-        print('processing packet {0}'.format(c))
-        packet = ipv4Packet(p[i:])
+        packet = ipv4Packet(p[i:], c)
         i += packet.length
         if packet.isValid():
-            r.append(packet.payload.payload)
+            r += packet.payload.payload
         c += 1
-        exit(1)
     return getLayer(bytesToString(r))
 
 def main():
@@ -147,7 +154,7 @@ def main():
     with open('onion.txt', 'r') as f:
         data = f.readlines()
     layer = getLayer(data)
-    for x in range(5):
+    for x in range(6):
         print(layer['instructions'])
         if x in decoder:
             layer = decoder[x](layer['payload'])
