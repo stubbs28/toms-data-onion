@@ -49,11 +49,15 @@ def decode2(payload):
 def decode3(payload):
     """Returns the decoded payload for Layer 3/5."""
 
-    known_string = b'==[ Layer 4/5: Network Traffic ]=='
+    # Based on previous layers, I could reasonably assume that the payload
+    # started with '==[ Layer 4/5: ', this gave me the first half of the key
+    # from there I was able to work out the rest of the key by guessing what
+    # partially formed words ought to be.
+    known = b'==[ Layer 4/5: Network Traffic ]=='
     p = payloadToBytes(payload)
     k = bytearray()
     for i in range(32):
-        k.append(p[i] ^ known_string[i])
+        k.append(p[i] ^ known[i])
     r = bytearray(len(p))
     for i in range(len(p)):
         r[i] = k[i % 32] ^ p[i]
@@ -174,9 +178,10 @@ def main():
         decode0,
         decode1,
         decode2,
-        decode3,
-        decode4,
-        decode5
+        decode32,
+        #decode3,
+        #decode4,
+        #decode5
     ]
     with open('onion.txt', 'r') as f:
         data = f.readlines()
