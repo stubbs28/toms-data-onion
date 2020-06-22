@@ -178,10 +178,9 @@ def main():
         decode0,
         decode1,
         decode2,
-        decode32,
-        #decode3,
-        #decode4,
-        #decode5
+        decode3,
+        decode4,
+        decode5
     ]
     with open('onion.txt', 'r') as f:
         data = f.readlines()
