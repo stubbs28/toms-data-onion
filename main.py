@@ -4,41 +4,14 @@ import struct
 from aes_keywrap import aes_unwrap_key
 from Crypto.Cipher import AES
 
-def getLayer(data):
-    """Returns instructions and payload from onion layer.
-
-    Keyword arguments:
-    data -- an array of strings (lines in a text file).
-    """
-
-    layer={}
-    current=''
-    for line in data:
-        if line.startswith('==[ Layer'):
-            current='instructions'
-            continue
-        elif line.startswith('==[ Payload'):
-            current='payload'
-            continue
-        elif current == '':
-            continue
-        if current not in layer:
-            layer[current] = ''
-        layer[current] += line
-    return layer
-
-def payloadToBytes(payload):
-    p = ''.join(payload.splitlines())
-    p = str.encode(p)
-    return base64.a85decode(p, adobe=True)
-
-def bytesToString(data):
-    return data.decode('utf-8').splitlines(True)
-
 def decode0(payload):
+    """Returns the decoded payload for Layer 0/5."""
+
     return getLayer(bytesToString(payloadToBytes(payload)))
 
 def decode1(payload):
+    """Returns the decoded payload for Layer 1/5."""
+
     p = bytearray(payloadToBytes(payload))
     for i in range(len(p)):
         b = p[i] ^ 0x55
@@ -46,6 +19,8 @@ def decode1(payload):
     return getLayer(bytesToString(p))
 
 def decode2(payload):
+    """Returns the decoded payload for Layer 2/5."""
+
     p = payloadToBytes(payload)
     r = bytearray()
     cur = 0
@@ -71,8 +46,10 @@ def decode2(payload):
             cur = 0
     return getLayer(bytesToString(r))
 
-known_string = b'==[ Layer 4/5: Network Traffic ]=='
 def decode3(payload):
+    """Returns the decoded payload for Layer 3/5."""
+
+    known_string = b'==[ Layer 4/5: Network Traffic ]=='
     p = payloadToBytes(payload)
     k = bytearray()
     for i in range(32):
@@ -80,6 +57,21 @@ def decode3(payload):
     r = bytearray(len(p))
     for i in range(len(p)):
         r[i] = k[i % 32] ^ p[i]
+    return getLayer(bytesToString(r))
+
+def decode4(payload):
+    """Returns the decoded payload for Layer 4/5."""
+
+    p = payloadToBytes(payload)
+    r = bytearray()
+    i = 0
+    c = 0
+    while i < len(p):
+        packet = ipv4Packet(p[i:], c)
+        i += packet.length
+        if packet.isValid():
+            r += packet.payload.payload
+        c += 1
     return getLayer(bytesToString(r))
 
 class ipv4Packet:
@@ -132,20 +124,10 @@ class udpPacket:
             return False
         return True
 
-def decode4(payload):
-    p = payloadToBytes(payload)
-    r = bytearray()
-    i = 0
-    c = 0
-    while i < len(p):
-        packet = ipv4Packet(p[i:], c)
-        i += packet.length
-        if packet.isValid():
-            r += packet.payload.payload
-        c += 1
-    return getLayer(bytesToString(r))
 
 def decode5(payload):
+    """Returns the decoded payload for Layer 5/5."""
+
     p = payloadToBytes(payload)
     partitions = [32, 8, 40, 16]
     sections = []
@@ -157,27 +139,51 @@ def decode5(payload):
     cipher = AES.new(unwrapped, AES.MODE_CBC, sections[3])
     print(cipher.decrypt(p).decode('utf-8'))
 
+def getLayer(data):
+    """Returns instructions and payload from onion layer."""
+
+    layer={}
+    current=''
+    for line in data:
+        if line.startswith('==[ Layer'):
+            current='instructions'
+        elif line.startswith('==[ Payload'):
+            current='payload'
+            continue
+        elif current == '':
+            continue
+        if current not in layer:
+            layer[current] = ''
+        layer[current] += line
+    return layer
+
+def payloadToBytes(payload):
+    """Returns a byte array from a payload string."""
+
+    p = ''.join(payload.splitlines())
+    p = str.encode(p)
+    return base64.a85decode(p, adobe=True)
+
+def bytesToString(data):
+    """Returns a string from a byte array."""
+
+    return data.decode('utf-8').splitlines(True)
 
 def main():
-    decoder = {
-        0: decode0,
-        1: decode1,
-        2: decode2,
-        3: decode3,
-        4: decode4,
-        5: decode5
-    }
+    decoders = [
+        decode0,
+        decode1,
+        decode2,
+        decode3,
+        decode4,
+        decode5
+    ]
     with open('onion.txt', 'r') as f:
         data = f.readlines()
     layer = getLayer(data)
-    for x in range(6):
+    for i, d in enumerate(decoders):
         print(layer['instructions'])
-        if x in decoder:
-            layer = decoder[x](layer['payload'])
-            print('==[Layer {0} Decoded]'.format(x).ljust(60, '='))
-        else:
-            print('==[Decoder {0} not implemented]'.format(x).ljust(60, '='))
-            break
+        layer = d(layer['payload'])
 
 if __name__ == '__main__':
     main()
